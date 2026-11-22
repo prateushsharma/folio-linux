@@ -1,7 +1,7 @@
 """Export non-destructive Folio annotations to an ordinary portable PDF."""
 from __future__ import annotations
 from pathlib import Path
-import fitz
+import pymupdf as fitz
 from .storage import Library
 
 

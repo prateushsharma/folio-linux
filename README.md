@@ -69,6 +69,22 @@ Once installed, right-click a PDF in Files â†’ **Properties** / **Open With** â†
 
 The installation script does *not* silently change your default app.
 
+### Troubleshoot Qt startup failure
+
+If Folio reports `Could not load the Qt platform plugin "xcb"`, run:
+
+```bash
+sudo apt update && sudo apt install libxcb-cursor0 libxkbcommon-x11-0 libegl1
+./scripts/doctor.sh
+folio
+```
+
+For Wayland desktops, test `QT_QPA_PLATFORM=wayland folio`. The deprecated `fitz` import was replaced by `pymupdf` in v0.1.1. See [troubleshooting](docs/TROUBLESHOOTING.md).
+
+### Updates using Git
+
+Run **`./install.sh` once after upgrading from v0.1.0**. The installer now uses an editable source checkout, so subsequent `git pull` commands update the running source without a reinstallation. **Do not move or delete your cloned repository** while installed.
+
 ## Keyboard shortcuts
 
 | Shortcut | Action |

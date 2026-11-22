@@ -2,7 +2,7 @@
 from __future__ import annotations
 from collections import OrderedDict
 from pathlib import Path
-import fitz
+import pymupdf as fitz
 
 
 class PDFDocument:

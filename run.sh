@@ -2,7 +2,7 @@
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")"
 if [[ -x .venv/bin/python ]]; then PYTHON=.venv/bin/python; else PYTHON=python3; fi
-if ! "$PYTHON" -c 'import PySide6, fitz' 2>/dev/null; then
+if ! "$PYTHON" -c 'import PySide6, pymupdf' 2>/dev/null; then
   cat <<'HELP'
 Folio needs its Python dependencies installed first.
 

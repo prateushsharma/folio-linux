@@ -1,4 +1,4 @@
-import fitz
+import pymupdf as fitz
 from folio.document import PDFDocument
 from folio.export import export_annotated_pdf
 from folio.storage import Library

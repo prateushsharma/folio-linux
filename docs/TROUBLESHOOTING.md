@@ -2,7 +2,7 @@
 
 ## Clicking Folio does nothing
 
-Run `~/.local/bin/folio` from a terminal to see the error. Common missing system libraries: `libxcb-cursor0`, `libxkbcommon-x11-0`, `libegl1`. On Ubuntu/Debian, these can be installed with `sudo apt install libxcb-cursor0 libxkbcommon-x11-0 libegl1`.
+Run `~/.local/bin/folio` from a terminal to see the error. Common missing system libraries: `libxcb-cursor0`, `libxkbcommon-x11-0`, `libegl1`. On Ubuntu/Debian, run `sudo apt update && sudo apt install libxcb-cursor0 libxkbcommon-x11-0 libegl1` and retry. Run `./scripts/doctor.sh` to inspect your exact Qt dependencies. On Wayland (`echo $XDG_SESSION_TYPE` reports `wayland`), try `QT_QPA_PLATFORM=wayland folio`. Use `QT_DEBUG_PLUGINS=1 folio` for the full loader diagnostics.
 
 ## Embedded Google results do not display
 
