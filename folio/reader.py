@@ -259,6 +259,11 @@ class PDFCanvas(QAbstractScrollArea):
         if not self.document:
             return None
         scale = self._scale
+        page_w, page_h = self.document.size(i)
+        # Upper-bound each raster to avoid extreme memory use on huge pages or zoom.
+        max_pixels = 8_000_000
+        scale = min(scale, math.sqrt(max_pixels / max(1, page_w * page_h)),
+                    3200 / max(1, page_w, page_h))
         key = (i, round(scale, 4), self.theme)
         if key in self._cache:
             self._cache.move_to_end(key)
@@ -449,24 +454,24 @@ class PDFCanvas(QAbstractScrollArea):
         (start_page, p1), (end_page, p2) = self._selection_start, self._selection_end
         if start_page != end_page:
             return
-        x0, x1 = sorted((p1[0], p2[0]))
-        y0, y1 = sorted((p1[1], p2[1]))
-        if abs(x1-x0) < 3 and abs(y1-y0) < 3:
+        words = self.document.words(start_page)
+        if not words:
             self._selected_words = []
             return
-        # Multi-line selection uses reading-order endpoints, rather than a huge rectangle.
-        words = self.document.words(start_page)
-        start_index = end_index = None
-        for index, w in enumerate(words):
-            if start_index is None and w[2] >= min(p1[0], p2[0]) and w[3] >= min(p1[1], p2[1]):
-                start_index = index
-            if w[0] <= max(p1[0], p2[0]) and w[1] <= max(p1[1], p2[1]):
-                end_index = index
-        if start_index is None or end_index is None:
+        if (p1[0]-p2[0])**2 + (p1[1]-p2[1])**2 < 9:
             self._selected_words = []
-        else:
-            lo, hi = sorted((start_index, end_index))
-            self._selected_words = [(start_page, w) for w in words[lo:hi+1]]
+            self.viewport().update()
+            return
+        def nearest(point):
+            x, y = point
+            def distance(w):
+                # Distance to each word's bounds, not just its center.
+                dx = max(w[0]-x, 0, x-w[2])
+                dy = max(w[1]-y, 0, y-w[3])
+                return dx*dx + dy*dy
+            return min(range(len(words)), key=lambda i: distance(words[i]))
+        a, b = sorted((nearest(p1), nearest(p2)))
+        self._selected_words = [(start_page, w) for w in words[a:b+1]]
         self.viewport().update()
 
     def selected_text(self) -> str:

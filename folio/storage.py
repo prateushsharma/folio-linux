@@ -33,7 +33,7 @@ class Library:
                 pages INTEGER NOT NULL DEFAULT 0, current_page INTEGER NOT NULL DEFAULT 0,
                 last_opened TEXT NOT NULL DEFAULT '', is_favorite INTEGER NOT NULL DEFAULT 0,
                 layout TEXT NOT NULL DEFAULT 'single', zoom REAL NOT NULL DEFAULT 1.0,
-                theme TEXT NOT NULL DEFAULT 'paper'
+                theme TEXT NOT NULL DEFAULT 'paper', brightness INTEGER NOT NULL DEFAULT 100
             );
             CREATE TABLE IF NOT EXISTS annotations (
                 id INTEGER PRIMARY KEY AUTOINCREMENT, path TEXT NOT NULL,
@@ -46,6 +46,9 @@ class Library:
                 PRIMARY KEY (path, page)
             );
         """)
+        columns = {r[1] for r in self.con.execute("PRAGMA table_info(books)")}
+        if "brightness" not in columns:
+            self.con.execute("ALTER TABLE books ADD COLUMN brightness INTEGER NOT NULL DEFAULT 100")
         self.con.commit()
 
     @staticmethod
@@ -77,10 +80,10 @@ class Library:
 
     def reading_state(self, path: str | Path) -> dict:
         row = self.get_book(path)
-        return dict(row) if row else {"current_page": 0, "layout": "single", "zoom": 1.0, "theme": "paper"}
+        return dict(row) if row else {"current_page": 0, "layout": "single", "zoom": 1.0, "theme": "paper", "brightness": 100}
 
     def set_state(self, path: str | Path, **updates):
-        allowed = {"current_page", "layout", "zoom", "theme", "last_opened", "is_favorite"}
+        allowed = {"current_page", "layout", "zoom", "theme", "brightness", "last_opened", "is_favorite"}
         clean = {k: v for k, v in updates.items() if k in allowed}
         if not clean:
             return

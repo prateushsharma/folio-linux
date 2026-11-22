@@ -1,12 +1,15 @@
 """Folio-Linux desktop shell: beautiful home, direct-open, tabs, reader and research."""
 from __future__ import annotations
 import argparse
+import json
+import os
 import hashlib
 from pathlib import Path
 import sys
 from urllib.parse import quote_plus
 
 from PySide6.QtCore import Qt, Signal, QSettings, QUrl
+from PySide6.QtNetwork import QLocalServer, QLocalSocket
 from PySide6.QtGui import (QColor, QFont, QKeySequence, QPainter, QLinearGradient,
                            QBrush, QDesktopServices, QShortcut)
 from PySide6.QtWidgets import (
@@ -337,6 +340,7 @@ class FolioWindow(QMainWindow):
         set_active(self.tool_buttons["select"], True)
         railbox.addSpacing(10)
         railbox.addWidget(create_button("●", "RailButton", "Ink color", self.choose_ink))
+        railbox.addWidget(create_button("⋯", "RailButton", "Pen thickness", self.choose_pen_width))
         railbox.addStretch()
         railbox.addWidget(create_button("⚙", "RailButton", "Preferences", self.show_preferences))
 
@@ -367,6 +371,7 @@ class FolioWindow(QMainWindow):
             self.layout_buttons[mode] = btn
         top.addSpacing(5)
         top.addWidget(create_button("◐", "IconButton", "Page appearance and brightness", self.show_appearance_menu))
+        top.addWidget(create_button("★", "IconButton", "Add/remove library favorite", self.toggle_favorite))
         top.addWidget(create_button("▤", "IconButton", "Contents sidebar", lambda: self.show_panel(0)))
         top.addWidget(create_button("▧", "IconButton", "Highlights and notes", lambda: self.show_panel(1)))
         top.addWidget(create_button("⌕", "IconButton", "Research sidebar", lambda: self.show_panel(2)))
@@ -562,6 +567,7 @@ class FolioWindow(QMainWindow):
                 label += f" · {summary}"
             self.annotation_list.addItem(f"p. {row['page']+1}   {label}")
             self.annotation_list.item(self.annotation_list.count()-1).setData(Qt.UserRole, row["page"])
+            self.annotation_list.item(self.annotation_list.count()-1).setToolTip(payload.get("text") or payload.get("quote") or label)
         for entry in self.storage.bookmarks(self.current_path):
             self.bookmark_list.addItem(f"★  Page {entry['page']+1}")
             self.bookmark_list.item(self.bookmark_list.count()-1).setData(Qt.UserRole, entry["page"])
@@ -639,6 +645,7 @@ class FolioWindow(QMainWindow):
         index = int(at_page) if at_page is not None else state.get("current_page", 0)
         self.canvas.set_document(doc, index, state.get("layout", "single"),
                                  state.get("zoom", 1.0), state.get("theme", "paper"))
+        self.canvas.set_brightness(state.get("brightness", 100))
         self._loading_doc = False
         self._update_layout_buttons()
         self._page_changed(self.canvas.page)
@@ -688,7 +695,8 @@ class FolioWindow(QMainWindow):
                                    current_page=self.canvas.page,
                                    layout=self.canvas.layout,
                                    zoom=self.canvas.zoom,
-                                   theme=self.canvas.theme)
+                                   theme=self.canvas.theme,
+                                   brightness=self.canvas.brightness)
 
     def _page_changed(self, page):
         doc = self.documents.get(self.current_path)
@@ -740,6 +748,14 @@ class FolioWindow(QMainWindow):
         self.statusBar().showMessage("Bookmark saved" if added else "Bookmark removed", 2200)
         self._refresh_annotations()
 
+    def toggle_favorite(self):
+        if not self.current_path:
+            return
+        row = self.storage.get_book(self.current_path)
+        new_value = not bool(row["is_favorite"]) if row else True
+        self.storage.set_state(self.current_path, is_favorite=int(new_value))
+        self.statusBar().showMessage("Added to favorites" if new_value else "Removed from favorites", 2400)
+
     def set_tool(self, tool):
         self._ui_tool = tool
         self.canvas.set_tool(tool)
@@ -752,6 +768,13 @@ class FolioWindow(QMainWindow):
             self.canvas.ink_color = color.name()
             self.set_tool("pen")
 
+    def choose_pen_width(self):
+        value, ok = QInputDialog.getDouble(self, "Pen thickness", "Stroke width (PDF points)",
+                                           self.canvas.ink_width, 0.5, 20.0, 1)
+        if ok:
+            self.canvas.ink_width = value
+            self.set_tool("pen")
+
     def show_appearance_menu(self):
         menu = QMenu(self)
         menu.addSection("Page appearance")
@@ -760,12 +783,18 @@ class FolioWindow(QMainWindow):
             action = menu.addAction(("✓  " if self.canvas.theme == key else "      ") + title)
             action.triggered.connect(lambda checked=False, k=key: self.change_theme(k))
         menu.addSeparator()
+        menu.addSection("Page fitting")
+        fit_page = menu.addAction("Fit entire page")
+        fit_width = menu.addAction("Fit page width")
+        fit_page.triggered.connect(lambda: self.canvas.set_fit_mode("page"))
+        fit_width.triggered.connect(lambda: self.canvas.set_fit_mode("width"))
+        menu.addSeparator()
         menu.addSection("Page brightness")
         slider = QSlider(Qt.Horizontal)
         slider.setRange(30, 100)
         slider.setValue(self.canvas.brightness)
         slider.setMinimumWidth(195)
-        slider.valueChanged.connect(self.canvas.set_brightness)
+        slider.valueChanged.connect(lambda value: (self.canvas.set_brightness(value), self._save_current_state()))
         slider_frame = QWidget()
         box = QHBoxLayout(slider_frame)
         box.setContentsMargins(14, 4, 14, 6)
@@ -878,6 +907,37 @@ class FolioWindow(QMainWindow):
         super().closeEvent(event)
 
 
+def _receive_launch(server: QLocalServer, window: FolioWindow, clients: list):
+    """Send file-open requests to existing instance instead of spawning windows."""
+    while server.hasPendingConnections():
+        client = server.nextPendingConnection()
+        clients.append(client)
+
+        def on_data(socket=client):
+            try:
+                message = json.loads(bytes(socket.readAll()).decode("utf-8"))
+                path = message.get("pdf")
+                if path:
+                    window.open_pdf(path, message.get("page"))
+                else:
+                    window._switch_home()
+                window.showNormal()
+                window.raise_()
+                window.activateWindow()
+            except (ValueError, TypeError, UnicodeDecodeError):
+                pass
+            finally:
+                if socket in clients:
+                    clients.remove(socket)
+                socket.disconnectFromServer()
+                socket.deleteLater()
+
+        client.readyRead.connect(on_data)
+        # Bytes may be ready before the signal connection in local IPC.
+        if client.bytesAvailable():
+            on_data()
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description="Folio-Linux: a comfortable, low-memory PDF reader")
     parser.add_argument("pdf", nargs="?", help="PDF file to open directly (without dashboard)")
@@ -889,8 +949,27 @@ def main(argv=None):
     app.setOrganizationName("FolioLinux")
     app.setStyle("Fusion")
     app.setStyleSheet(STYLE)
+
+    # Local socket gives us Word-like desktop behavior: one process, new file tab.
+    socket_name = f"folio-linux-{os.getuid()}"
+    client = QLocalSocket()
+    client.connectToServer(socket_name)
+    if client.waitForConnected(200):
+        data = {"pdf": str(Path(args.pdf).expanduser().resolve()) if args.pdf else None,
+                "page": args.page - 1 if args.page else None}
+        client.write((json.dumps(data) + "\n").encode("utf-8"))
+        client.waitForBytesWritten(1000)
+        client.disconnectFromServer()
+        return 0
+    client.close()
+    server = QLocalServer()
+    # An old crashed instance may have left a stale Unix socket.
+    QLocalServer.removeServer(socket_name)
+    server.listen(socket_name)
     window = FolioWindow(args.pdf, args.page - 1 if args.page else None)
     window.canvas.set_memory_budget(int(window.settings.value("image-cache-mib", 64)))
+    client_connections = []
+    server.newConnection.connect(lambda: _receive_launch(server, window, client_connections))
     window.show()
     return app.exec()
 

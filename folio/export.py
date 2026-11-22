@@ -21,12 +21,12 @@ def export_annotated_pdf(source: str | Path, target: str | Path, library: Librar
             kind = record["kind"]
             annot = None
             if kind in ("ink", "marker"):
-                points = [fitz.Point(x, y) for x, y in data.get("points", [])]
+                points = [[float(x), float(y)] for x, y in data.get("points", [])]
                 if len(points) == 1:
-                    points.append(fitz.Point(points[0].x+.1, points[0].y+.1))
+                    points.append([points[0][0]+.1, points[0][1]+.1])
                 if len(points) > 1:
                     annot = page.add_ink_annot([points])
-                    color = fitz.utils.getColor("yellow") if kind == "marker" else fitz.sRGB_to_pdf(fitz.sRGB_to_rgb(0xC6784C))
+                    color = fitz.utils.getColor("yellow") if kind == "marker" else fitz.sRGB_to_pdf(0xC6784C)
                     annot.set_colors(stroke=color)
                     annot.set_border(width=float(data.get("width", 2)))
                     annot.set_opacity(0.4 if kind == "marker" else 0.96)

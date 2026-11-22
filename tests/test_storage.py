@@ -8,10 +8,11 @@ def test_book_progress_and_preferences(tmp_path):
     book = tmp_path / "book.pdf"
     book.write_bytes(b"%PDF-placeholder")
     db.upsert_book(book, "Foundations", "Reader", 120)
-    db.set_state(book, current_page=64, theme="sepia", layout="spread", zoom=1.25)
+    db.set_state(book, current_page=64, theme="sepia", layout="spread", zoom=1.25, brightness=65)
     row = db.reading_state(book)
     assert row["current_page"] == 64
     assert row["layout"] == "spread"
+    assert row["brightness"] == 65
     assert db.books(search="Foundations")[0].title == "Foundations"
     assert len(db.books(search="something else")) == 0
     db.close()
