@@ -53,7 +53,7 @@ class PDFDocument:
         # Search forward, wrapping once. Query comes from the local user.
         for offset in range(self.pages):
             i = (from_page + offset) % self.pages
-            found = self.pdf.load_page(i).search_for(text.strip(), hit_max=30)
+            found = self.pdf.load_page(i).search_for(text.strip())[:30]
             if found:
                 return i, [(r.x0, r.y0, r.x1, r.y1) for r in found]
         return None
